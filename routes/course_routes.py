@@ -10,7 +10,7 @@ def is_admin():
     return claims.get("role") == "admin"
 
 
-# Add Course (Admin only)
+# Add Course (Admin only) with duplicate validation
 @course_bp.route("/courses", methods=["POST"])
 @jwt_required()
 def add_course():
@@ -20,6 +20,10 @@ def add_course():
     data = request.json
     if not data.get("course_name"):
         return jsonify({"error": "course_name is required"}), 400
+
+    # Check for duplicate course name
+    if courses_collection.find_one({"course_name": data["course_name"]}):
+        return jsonify({"error": "Course with this name already exists"}), 400
 
     course = {
         "course_name": data["course_name"],
@@ -38,6 +42,18 @@ def get_courses():
         course["_id"] = str(course["_id"])
         courses.append(course)
     return jsonify(courses), 200
+
+
+# Get Single Course by ID (Both Admin & Students)
+@course_bp.route("/courses/<course_id>", methods=["GET"])
+@jwt_required()
+def get_single_course(course_id):
+    course = courses_collection.find_one({"_id": ObjectId(course_id)})
+    if not course:
+        return jsonify({"error": "Course not found"}), 404
+
+    course["_id"] = str(course["_id"])
+    return jsonify(course), 200
 
 
 # Update Course (Admin only)
