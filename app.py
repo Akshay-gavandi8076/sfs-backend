@@ -5,6 +5,7 @@ from flask_jwt_extended import JWTManager
 # Import blueprints
 from routes.auth_routes import auth_bp
 from routes.course_routes import course_bp
+from routes.feedback_routes import feedback_bp
 
 app = Flask(__name__)
 CORS(app)
@@ -16,6 +17,7 @@ jwt = JWTManager(app)
 # Register Blueprints
 app.register_blueprint(auth_bp)
 app.register_blueprint(course_bp)
+app.register_blueprint(feedback_bp)
 
 
 if __name__ == "__main__":
