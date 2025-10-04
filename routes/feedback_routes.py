@@ -1,84 +1,92 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from bson import ObjectId
 from models.feedback_model import feedback_collection
 from models.course_model import courses_collection
-from models.student_model import students_collection
+from models.user_model import students_collection
+from bson import ObjectId
+import datetime
 
-feedback_bp = Blueprint("feedback", __name__)
+feedback_bp = Blueprint("feedback_bp", __name__)
 
+# Submit or edit feedback
 @feedback_bp.route("/feedback", methods=["POST"])
 @jwt_required()
-def give_feedback():
-    data = request.get_json()
+def submit_feedback():
+    student_id = get_jwt_identity()
+    student = students_collection.find_one({"_id": ObjectId(student_id)})
 
-    required_fields = ["course_id", "rating", "comment"]
-    if not all(field in data for field in required_fields):
-        return jsonify({"msg": "Missing fields"}), 400
+    if not student or student.get("role") != "student":
+        return jsonify({"error": "Student login required"}), 403
 
-    current_user = get_jwt_identity()
-    student = students_collection.find_one({"_id": ObjectId(current_user)})
+    data = request.json
+    if not data.get("course_id") or not data.get("rating"):
+        return jsonify({"error": "course_id and rating required"}), 400
 
-    if not student:
-        return jsonify({"msg": "Only students can submit feedback"}), 403
+    course = courses_collection.find_one({"_id": ObjectId(data["course_id"])})
+    if not course:
+        return jsonify({"error": "Invalid course"}), 400
 
-    feedback = {
-        "course_id": ObjectId(data["course_id"]),
-        "student_id": ObjectId(current_user),
-        "rating": int(data["rating"]),
-        "comment": data["comment"]
+    # Check if feedback already exists
+    existing_feedback = feedback_collection.find_one({
+        "student_id": str(student["_id"]),
+        "course_id": data["course_id"]
+    })
+
+    feedback_data = {
+        "student_id": str(student["_id"]),
+        "course_id": data["course_id"],
+        "semester": course["semester"],
+        "course_name": course["course_name"],
+        "instructor": course["instructor"],
+        "rating": data["rating"],
+        "comment": data.get("comment", ""),
+        "timestamp": datetime.datetime.utcnow()
     }
 
-    feedback_collection.insert_one(feedback)
-    return jsonify({"msg": "Feedback submitted successfully"}), 201
+    if existing_feedback:
+        # Update existing feedback
+        feedback_collection.update_one(
+            {"_id": existing_feedback["_id"]},
+            {"$set": feedback_data}
+        )
+        return jsonify({"message": "Feedback updated successfully!"}), 200
+    else:
+        # Insert new feedback
+        feedback_collection.insert_one(feedback_data)
+        return jsonify({"message": "Feedback submitted successfully!"}), 201
 
-@feedback_bp.route("/feedbacks/<course_id>", methods=["GET"])
+
+# Get my feedbacks
+@feedback_bp.route("/feedback/my", methods=["GET"])
 @jwt_required()
-def get_feedbacks_for_course(course_id):
-    feedbacks = list(feedback_collection.find({"course_id": ObjectId(course_id)}))
-    
+def get_my_feedbacks():
+    student_id = get_jwt_identity()
+    student = students_collection.find_one({"_id": ObjectId(student_id)})
+
+    if not student or student.get("role") != "student":
+        return jsonify({"error": "Student login required"}), 403
+
+    feedbacks = list(feedback_collection.find({"student_id": str(student["_id"])}))
     for fb in feedbacks:
         fb["_id"] = str(fb["_id"])
-        fb["student_id"] = str(fb["student_id"])
-        fb["course_id"] = str(fb["course_id"])
-    
     return jsonify(feedbacks), 200
 
-# from flask import Blueprint, request, jsonify
-# from flask_jwt_extended import jwt_required, get_jwt_identity
-# from bson import ObjectId
-# from models.feedback_model import feedback_collection
-# from models.course_model import courses_collection
-# from models.user_model import users_collection
+# Delete feedback
+@feedback_bp.route("/feedback/<feedback_id>", methods=["DELETE"])
+@jwt_required()
+def delete_feedback(feedback_id):
+    student_id = get_jwt_identity()
+    student = students_collection.find_one({"_id": ObjectId(student_id)})
 
-# feedback_bp = Blueprint("feedback", __name__)
+    if not student or student.get("role") != "student":
+        return jsonify({"error": "Student login required"}), 403
 
-# @feedback_bp.route("/feedback", methods=["POST"])
-# def give_feedback():
-#     data = request.get_json()
+    result = feedback_collection.delete_one({
+        "_id": ObjectId(feedback_id),
+        "student_id": str(student["_id"])
+    })
 
-#     required_fields = ["course_id", "student_id", "rating", "comment"]
-#     if not all(field in data for field in required_fields):
-#         return jsonify({"msg": "Missing fields"}), 400
+    if result.deleted_count == 0:
+        return jsonify({"error": "Feedback not found"}), 404
 
-#     feedback = {
-#         "course_id": ObjectId(data["course_id"]),
-#         "student_id": ObjectId(data["student_id"]),
-#         "rating": int(data["rating"]),
-#         "comment": data["comment"]
-#     }
-
-#     feedback_collection.insert_one(feedback)
-#     return jsonify({"msg": "Feedback submitted successfully"}), 201
-
-# @feedback_bp.route("/feedbacks/<course_id>", methods=["GET"])
-# @jwt_required()
-# def get_feedbacks_for_course(course_id):
-#     feedbacks = list(feedback_collection.find({"course_id": ObjectId(course_id)}))
-    
-#     for fb in feedbacks:
-#         fb["_id"] = str(fb["_id"])
-#         fb["student_id"] = str(fb["student_id"])
-#         fb["course_id"] = str(fb["course_id"])
-    
-#     return jsonify(feedbacks), 200
+    return jsonify({"message": "Feedback deleted successfully!"}), 200
