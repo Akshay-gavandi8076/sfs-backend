@@ -18,6 +18,8 @@ python app.py
 mongod
 ```
 
+## Run docker container
+
 ```bash
 docker compose up -d
 ```
