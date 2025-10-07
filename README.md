@@ -17,3 +17,7 @@ python app.py
 ```bash
 mongod
 ```
+
+```bash
+docker compose up -d
+```
